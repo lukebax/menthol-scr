@@ -1,0 +1,22 @@
+# Generated analysis results
+/outputs/
+
+# R and RStudio session files
+.Rproj.user/
+.Rhistory
+.Rapp.history
+.RData
+.RDataTmp
+.Ruserdata
+.Renviron
+*.Rout
+
+# macOS metadata
+.DS_Store
+.AppleDouble
+.LSOverride
+._*
+
+# Editor temporary files
+*~
+*.swp
