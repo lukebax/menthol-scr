@@ -601,7 +601,7 @@ panel_c <- ggplot(
     axis.title.x = element_text(size = 11)
   )
 
-rain_colour <- "#1B9E77"
+rain_colour <- "#74AF8D"
 sample_size_breaks <- scales::breaks_pretty(n = 5)(
   c(0, max(c(1L, numeric_sample_sizes$sample_size)))
 )

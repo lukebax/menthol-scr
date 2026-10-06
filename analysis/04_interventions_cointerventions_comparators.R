@@ -271,6 +271,14 @@ if (anyDuplicated(select(
   stop("Equivalent concentration points have conflicting purpose tags; resolve their combined purpose before plotting.")
 }
 
+# Describe therapeutic point concentrations separately from the 40% preparations.
+# A point used for both purposes still includes therapeutic use.
+therapeutic_points_excluding_40_percent <- concentration_points |>
+  filter(
+    concentration_purpose %in% c("Therapeutic", "Both"),
+    concentration_percent != 40
+  )
+
 # Comparator profiles keep the source-near description, reported role, and
 # controlled types together. Ingredients alone do not determine the role.
 # Bare or scoped NI retains unresolved comparator information.
@@ -396,13 +404,6 @@ unresolved_comparator_ids <- union(
 study_labels <- studies |>
   select(record_id, first_author, publication_year, study_label)
 
-ground_peppermint_labels <- form_memberships |>
-  filter(pharmaceutical_form == "Ground peppermint") |>
-  left_join(study_labels, by = "record_id") |>
-  arrange(first_author, publication_year, record_id, .locale = "en") |>
-  pull(study_label) |>
-  str_c(collapse = "; ")
-
 maximum_concentration <- if (nrow(concentration_points) > 0L) {
   max(concentration_points$concentration_percent)
 } else {
@@ -477,8 +478,6 @@ in_text_results <- tibble(
     "pharmaceutical_form_summary",
     "most_common_pharmaceutical_form",
     "most_common_pharmaceutical_form_studies",
-    "ground_peppermint_studies",
-    "ground_peppermint_study_labels",
     "studies_with_usable_menthol_concentration_point",
     "studies_without_usable_menthol_concentration_point",
     "studies_with_unresolved_menthol_concentration_information",
@@ -487,8 +486,11 @@ in_text_results <- tibble(
     "maximum_menthol_concentration_percent",
     "maximum_menthol_concentration_studies",
     "maximum_menthol_concentration_study_labels",
+    "minimum_therapeutic_menthol_concentration_excluding_40_percent",
+    "maximum_therapeutic_menthol_concentration_excluding_40_percent",
     "studies_with_named_co_intervention",
     "studies_with_unresolved_co_intervention_information",
+    "studies_with_named_and_unresolved_co_intervention",
     "studies_with_fully_absent_co_intervention",
     "named_co_intervention_summary",
     "studies_with_classified_eligible_comparator",
@@ -514,8 +516,6 @@ in_text_results <- tibble(
       str_c(most_common_forms$pharmaceutical_form, collapse = "; ")
     } else "NI",
     if (nrow(form_counts) > 0L) max(form_counts$studies) else "NI",
-    sum(form_counts$studies[form_counts$pharmaceutical_form == "Ground peppermint"]),
-    ground_peppermint_labels,
     length(point_study_ids),
     nrow(studies) - length(point_study_ids),
     length(unresolved_concentration_ids),
@@ -531,8 +531,15 @@ in_text_results <- tibble(
       ]
     ),
     maximum_concentration_labels,
+    if (nrow(therapeutic_points_excluding_40_percent) > 0L) {
+      min(therapeutic_points_excluding_40_percent$concentration_percent)
+    } else "NI",
+    if (nrow(therapeutic_points_excluding_40_percent) > 0L) {
+      max(therapeutic_points_excluding_40_percent$concentration_percent)
+    } else "NI",
     n_distinct(named_co_interventions$record_id),
     length(unresolved_co_intervention_ids),
+    length(intersect(named_co_interventions$record_id, unresolved_co_intervention_ids)),
     sum(studies$co_intervention == "N/A"),
     co_intervention_summary,
     n_distinct(comparator_profiles$record_id),
@@ -550,7 +557,7 @@ in_text_results <- tibble(
 in_text_results$value[in_text_results$value == ""] <- "None"
 
 if (
-  nrow(in_text_results) != 28L ||
+  nrow(in_text_results) != 29L ||
     anyDuplicated(in_text_results$result) ||
     any(is.na(in_text_results$value)) ||
     any(in_text_results$value == "")
@@ -629,9 +636,9 @@ if (nrow(form_counts) == 0L) {
     theme(plot.tag = element_text(face = "bold"))
 }
 
-rain_colour <- "#808080"
+rain_colour <- "#74AF8D"
 purpose_colours <- c(
-  Therapeutic = "#0072B2",
+  Therapeutic = rain_colour,
   `Masking/control` = "#D55E00",
   Both = "#CC79A7",
   NI = "#555555"
@@ -650,7 +657,7 @@ concentration_points <- concentration_points |>
     concentration_purpose, levels = names(purpose_colours)
   ))
 
-# Colour only the dots. The box and violin summarise all retained point values.
+# Only dot colours distinguish purpose. The box and violin summarise all retained point values.
 # Reported purpose is distinct from comparator role or demonstrated efficacy.
 panel_b <- ggplot(
   concentration_points,
@@ -660,7 +667,7 @@ panel_b <- ggplot(
     seed = 1,
     rain.side = "r",
     cov = "concentration_purpose",
-    point.args = list(size = 2.5, alpha = 0.9),
+    point.args = list(size = 2.5, alpha = 0.5),
     point.args.pos = list(
       position = ggpp::position_jitternudge(
         width = 0.065,
@@ -694,7 +701,7 @@ panel_b <- ggplot(
       quantiles = NULL,
       position = position_nudge(x = 0)
     )
-  ) else geom_point(aes(colour = concentration_purpose), size = 2.5, alpha = 0.9)} +
+  ) else geom_point(aes(colour = concentration_purpose), size = 2.5, alpha = 0.5)} +
   scale_colour_manual(
     name = "Reported purpose",
     values = purpose_colours,

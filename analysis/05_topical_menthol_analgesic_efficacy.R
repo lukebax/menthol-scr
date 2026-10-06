@@ -9,6 +9,7 @@ suppressPackageStartupMessages({
   library(tidyr)
   library(ggplot2)
   library(patchwork)
+  library(ggrain)
 })
 
 # Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
@@ -180,13 +181,12 @@ in_text_results <- bind_rows(
     result = c(
       "included_studies", "studies_with_unresolved_efficacy_result_count",
       "studies_with_multiple_efficacy_results", "median_efficacy_results_per_study",
-      "mean_efficacy_results_per_study", "efficacy_results_per_study_iqr",
+      "efficacy_results_per_study_iqr",
       "efficacy_results_per_study_range"
     ),
     value = as.character(c(
       nrow(studies), sum(is.na(studies$efficacy_result_count)), sum(result_counts > 1),
       if (length(result_counts)) median(result_counts) else "NI",
-      if (length(result_counts)) sprintf("%.1f", mean(result_counts)) else "NI",
       if (length(result_counts)) {
         paste(quantile(result_counts, c(0.25, 0.75), names = FALSE), collapse = "–")
       } else "NI",
@@ -215,7 +215,7 @@ in_text_results <- bind_rows(
   )
 )
 
-# A uses the natural numerical order; B uses coverage order; C uses frequency.
+# Keep count ticks whole; B uses coverage order and C uses frequency.
 study_count_breaks <- function(limits) {
   breaks <- unique(round(scales::breaks_pretty(n = 5)(limits)))
   breaks[breaks >= 0]
@@ -231,24 +231,72 @@ figure_theme <- theme_minimal(base_size = 11) +
     plot.tag = element_text(face = "bold"),
     plot.margin = margin(8, 12, 8, 8)
   )
-frequency_counts <- studies |>
-  filter(!is.na(efficacy_result_count)) |>
-  count(efficacy_result_count, name = "studies")
-panel_a <- ggplot(frequency_counts, aes(efficacy_result_count, studies)) +
-  geom_col(fill = coverage_colours["All"], width = 0.7) +
-  geom_text(aes(label = studies), vjust = -0.4, size = 3.5) +
-  scale_x_continuous(breaks = frequency_counts$efficacy_result_count) +
+rain_colour <- "#74AF8D"
+result_plot_data <- studies |>
+  filter(!is.na(efficacy_result_count))
+result_count_breaks <- study_count_breaks(c(0, max(c(1, result_counts))))
+result_count_upper_limit <- max(c(1, result_counts, result_count_breaks))
+rain_point_position <- ggpp::position_jitternudge(
+  width = 0.065, height = 0, seed = 1, x = -0.4,
+  nudge.from = "jittered", kept.origin = "none"
+)
+
+# One point per study, including zero counts and descriptive case reports.
+# Omit the density when there is no variation; retain its points and boxplot.
+panel_a <- ggplot(result_plot_data, aes(x = factor(""), y = efficacy_result_count)) +
+  {if (n_distinct(result_counts) > 1L) geom_rain(
+    seed = 1,
+    rain.side = "r",
+    point.args = list(colour = rain_colour, size = 2.5, alpha = 0.5),
+    point.args.pos = list(position = rain_point_position),
+    boxplot.args = list(
+      fill = scales::alpha(rain_colour, 0.5),
+      colour = rain_colour,
+      linewidth = 1,
+      outlier.shape = NA
+    ),
+    boxplot.args.pos = list(width = 0.1, position = position_nudge(x = -0.15)),
+    violin.args = list(
+      fill = rain_colour,
+      colour = rain_colour,
+      linewidth = 1,
+      alpha = 0.5,
+      adjust = 1,
+      trim = TRUE
+    ),
+    violin.args.pos = list(
+      side = "r", width = 0.7, quantiles = NULL,
+      position = position_nudge(x = 0)
+    )
+  ) else list(
+    geom_boxplot(
+      fill = scales::alpha(rain_colour, 0.5), colour = rain_colour,
+      linewidth = 1, outlier.shape = NA, width = 0.1,
+      position = position_nudge(x = -0.15)
+    ),
+    geom_point(
+      colour = rain_colour, size = 2.5, alpha = 0.5,
+      position = rain_point_position
+    )
+  )} +
+  scale_x_discrete(expand = expansion(add = c(0.55, 0.35))) +
   scale_y_continuous(
-    breaks = scales::breaks_width(1), expand = expansion(mult = c(0, 0.15))
+    limits = c(0, result_count_upper_limit),
+    breaks = result_count_breaks,
+    expand = expansion(mult = c(0.05, 0.05))
   ) +
-  labs(x = "Confirmed reported comparisons or\ncase-report pain findings per study", y = "Number of studies") +
-  figure_theme + theme(
-    panel.grid.major.x = element_blank(),
-    axis.text.x = element_text(angle = 90, hjust = 1, vjust = 0.5)
+  labs(x = NULL, y = "Results per study") +
+  theme_classic(base_size = 11) +
+  theme(
+    axis.text.x = element_blank(),
+    axis.ticks.x = element_blank(),
+    axis.line.x = element_blank(),
+    plot.tag = element_text(face = "bold"),
+    plot.margin = margin(8, 12, 8, 8)
   )
 if (length(result_counts) == 0L) {
   panel_a <- ggplot() +
-    annotate("text", x = 0, y = 0, label = "No resolved counts of comparisons or case-report pain findings") +
+    annotate("text", x = 0, y = 0, label = "No resolved counts\nof efficacy results") +
     theme_void(base_size = 11) + theme(plot.margin = margin(8, 12, 8, 8))
 }
 
@@ -259,7 +307,7 @@ coverage_plot_data <- coverage_counts |>
     coverage = factor(coverage, levels = rev(coverage_levels)),
     reporting = factor(
       reporting_field, levels = count_fields[2:3],
-      labels = c("Effect estimate", "Effect estimate with precision")
+      labels = c("Effect estimate", "Effect estimate\nwith precision")
     )
   )
 panel_b <- ggplot(coverage_plot_data, aes(studies, coverage, fill = coverage, alpha = reporting)) +
@@ -274,7 +322,7 @@ panel_b <- ggplot(coverage_plot_data, aes(studies, coverage, fill = coverage, al
   scale_y_discrete(labels = function(x) ifelse(
     x == "No counted comparisons", "No counted\ncomparisons", x
   )) +
-  labs(title = "Availability within counted comparisons", x = "Number of studies", y = NULL, alpha = NULL) +
+  labs(title = "Availability within\ncounted comparisons", x = "Number of studies", y = NULL, alpha = NULL) +
   figure_theme +
   theme(panel.grid.major.y = element_blank(), legend.position = "bottom") +
   guides(alpha = guide_legend(ncol = 1, override.aes = list(fill = "#555555")))
@@ -292,16 +340,16 @@ panel_c <- ggplot(registration_plot_data, aes(studies, study_registration, fill 
   ), guide = "none") +
   scale_y_discrete(labels = c(
     Prospective = "Prospective", Retrospective = "Retrospective",
-    `No sufficiently matched public registry record located` = "No sufficiently matched\npublic registry record\nlocated",
+    `No sufficiently matched public registry record located` = "No sufficiently\nmatched public\nregistry record\nlocated",
     Unresolved = "Unresolved"
   )) +
   scale_x_continuous(breaks = study_count_breaks, expand = expansion(mult = c(0, 0.15))) +
   labs(title = "Study registration", x = "Number of studies", y = NULL) +
   figure_theme + theme(panel.grid.major.y = element_blank())
 
-# Keep one combined figure, with A above equally sized B and C panels.
-figure_5 <- (panel_a / (panel_b | panel_c)) +
-  plot_layout(heights = c(1, 1.2)) +
+# Place the distribution, reporting coverage, and registration side by side.
+figure_5 <- (panel_a | panel_b | panel_c) +
+  plot_layout(widths = c(0.8, 1.1, 1.1)) +
   plot_annotation(
     tag_levels = "a", tag_suffix = ".",
     caption = paste0(
@@ -314,6 +362,6 @@ dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))
 ggsave(
   file.path(output_dir, "figure_5_topical_menthol_analgesic_efficacy.png"), figure_5,
-  device = ragg::agg_png, width = 10, height = 7.5, units = "in", dpi = 300,
+  device = ragg::agg_png, width = 10, height = 5.2, units = "in", dpi = 300,
   bg = "white"
 )

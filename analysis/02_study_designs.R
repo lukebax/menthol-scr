@@ -157,6 +157,15 @@ method_memberships <- measurements |>
 context_memberships <- contexts |>
   distinct(record_id, pain_origin, pain_context, participant_sex)
 
+induced_ids <- context_memberships |>
+  filter(pain_origin == "Induced") |>
+  pull(record_id) |>
+  unique()
+pre_existing_ids <- context_memberships |>
+  filter(pain_origin == "Pre-existing") |>
+  pull(record_id) |>
+  unique()
+
 # Derive the summaries once so the figure and text use the same counts.
 design_counts <- studies |>
   count(study_design, name = "studies") |>
@@ -257,7 +266,6 @@ in_text_results <- tibble(
     "pre_post_studies",
     "single_arm_studies",
     "case_report_studies",
-    "parallel_cross_over_or_pre_post_studies",
     "distinct_pain_measurement_methods",
     "vas_studies",
     "nrs_studies",
@@ -269,6 +277,7 @@ in_text_results <- tibble(
     "threshold_assessment_study_labels",
     "induced_pain_studies",
     "pre_existing_pain_studies",
+    "induced_and_pre_existing_pain_studies",
     "most_common_induced_context",
     "most_common_induced_context_studies",
     "most_common_pre_existing_context",
@@ -281,7 +290,6 @@ in_text_results <- tibble(
     sum(studies$study_design == "Pre-post"),
     sum(studies$study_design == "Single arm"),
     sum(studies$study_design == "Case report"),
-    sum(studies$study_design %in% c("Parallel groups", "Cross-over", "Pre-post")),
     n_distinct(method_memberships$measurement_method),
     length(vas_ids),
     length(nrs_ids),
@@ -291,8 +299,9 @@ in_text_results <- tibble(
     length(threshold_ids),
     length(intersect(intensity_ids, threshold_ids)),
     threshold_labels,
-    n_distinct(context_memberships$record_id[context_memberships$pain_origin == "Induced"]),
-    n_distinct(context_memberships$record_id[context_memberships$pain_origin == "Pre-existing"]),
+    length(induced_ids),
+    length(pre_existing_ids),
+    length(intersect(induced_ids, pre_existing_ids)),
     if (nrow(most_common_induced)) str_c(most_common_induced$pain_context, collapse = "; ") else "N/A",
     if (nrow(most_common_induced)) first(most_common_induced$studies) else "N/A",
     if (nrow(most_common_pre_existing)) str_c(most_common_pre_existing$pain_context, collapse = "; ") else "N/A",

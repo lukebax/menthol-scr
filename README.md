@@ -52,7 +52,7 @@ The scripts create `outputs/` automatically, with one subfolder per subsection:
 | 02 | Figure 2: study designs and pain measurements/contexts |
 | 03 | Figure 3: study populations |
 | 04 | Figure 4: interventions, co-interventions, and comparators |
-| 05 | Figure 5: efficacy-result counts and numerical reporting |
+| 05 | Figure 5: efficacy-result counts, numerical reporting, and registration |
 | 06 | Table 2: adverse-event reporting, as CSV and Word files |
 
 Each script also writes an `in_text_results.csv` containing named summary values. Together, the scripts produce four PNG figures, two CSV/Word table pairs, and six summary CSVs: 14 files. Re-running a script replaces its generated files.
