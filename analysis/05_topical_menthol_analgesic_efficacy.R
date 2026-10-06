@@ -285,19 +285,26 @@ panel_a <- ggplot(result_plot_data, aes(x = factor(""), y = efficacy_result_coun
     breaks = result_count_breaks,
     expand = expansion(mult = c(0.05, 0.05))
   ) +
-  labs(x = NULL, y = "Results per study") +
+  labs(title = "Efficacy results", x = NULL, y = "Results per study") +
   theme_classic(base_size = 11) +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
+    plot.title = element_text(face = "bold", size = 12),
     plot.tag = element_text(face = "bold"),
     plot.margin = margin(8, 12, 8, 8)
   )
 if (length(result_counts) == 0L) {
   panel_a <- ggplot() +
     annotate("text", x = 0, y = 0, label = "No resolved counts\nof efficacy results") +
-    theme_void(base_size = 11) + theme(plot.margin = margin(8, 12, 8, 8))
+    labs(title = "Efficacy results") +
+    theme_void(base_size = 11) +
+    theme(
+      plot.title = element_text(face = "bold", size = 12),
+      plot.tag = element_text(face = "bold"),
+      plot.margin = margin(8, 12, 8, 8)
+    )
 }
 
 coverage_plot_data <- coverage_counts |>
@@ -307,7 +314,7 @@ coverage_plot_data <- coverage_counts |>
     coverage = factor(coverage, levels = rev(coverage_levels)),
     reporting = factor(
       reporting_field, levels = count_fields[2:3],
-      labels = c("Effect estimate", "Effect estimate\nwith precision")
+      labels = c("Effect estimate", "Effect estimate with precision")
     )
   )
 panel_b <- ggplot(coverage_plot_data, aes(studies, coverage, fill = coverage, alpha = reporting)) +
@@ -322,10 +329,10 @@ panel_b <- ggplot(coverage_plot_data, aes(studies, coverage, fill = coverage, al
   scale_y_discrete(labels = function(x) ifelse(
     x == "No counted comparisons", "No counted\ncomparisons", x
   )) +
-  labs(title = "Availability within\ncounted comparisons", x = "Number of studies", y = NULL, alpha = NULL) +
+  labs(title = "Numerical reporting", x = "Number of studies", y = NULL, alpha = NULL) +
   figure_theme +
   theme(panel.grid.major.y = element_blank(), legend.position = "bottom") +
-  guides(alpha = guide_legend(ncol = 1, override.aes = list(fill = "#555555")))
+  guides(alpha = guide_legend(nrow = 1, override.aes = list(fill = "#555555")))
 
 registration_plot_data <- registration_counts |>
   filter(study_registration != "Unresolved" | studies > 0) |>
@@ -349,19 +356,13 @@ panel_c <- ggplot(registration_plot_data, aes(studies, study_registration, fill 
 
 # Place the distribution, reporting coverage, and registration side by side.
 figure_5 <- (panel_a | panel_b | panel_c) +
-  plot_layout(widths = c(0.8, 1.1, 1.1)) +
-  plot_annotation(
-    tag_levels = "a", tag_suffix = ".",
-    caption = paste0(
-      "Counts are confirmed minima; availability describes only the counted comparison inventory.\n",
-      "Zero comparisons have no coverage denominator; N/A denotes descriptive case reports."
-    ),
-    theme = theme(plot.caption = element_text(hjust = 0, size = 9))
-  )
+  plot_layout(widths = c(0.8, 1.1, 1.1), guides = "collect") +
+  plot_annotation(tag_levels = "a", tag_suffix = ".") &
+  theme(legend.position = "bottom", legend.direction = "horizontal")
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))
 ggsave(
   file.path(output_dir, "figure_5_topical_menthol_analgesic_efficacy.png"), figure_5,
-  device = ragg::agg_png, width = 10, height = 5.2, units = "in", dpi = 300,
+  device = ragg::agg_png, width = 10, height = 4.2, units = "in", dpi = 300,
   bg = "white"
 )

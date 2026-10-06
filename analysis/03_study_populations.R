@@ -503,6 +503,7 @@ panel_b <- ggplot(region_plot_data, aes(x = studies, y = region_label)) +
   ) +
   scale_y_discrete(labels = function(x) str_wrap(x, width = 22)) +
   labs(
+    title = "WHO regions",
     x = "Number of studies",
     y = NULL,
     tag = "b."
@@ -512,6 +513,7 @@ panel_b <- ggplot(region_plot_data, aes(x = studies, y = region_label)) +
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
     plot.tag = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 12),
     axis.title.x = element_text(size = 11),
     axis.text.y = element_text(size = 8.5)
   )
@@ -543,12 +545,11 @@ map_plot <- ggplot() +
     name = "Number of studies"
   )} +
   coord_sf(xlim = c(-170, 180), ylim = c(-58, 85), expand = FALSE) +
-  labs(tag = "a.") +
+  labs(title = "Study countries", tag = "a.") +
   theme_void(base_size = 11) +
   theme(
     plot.tag = element_text(face = "bold"),
-    # Align the panel tag and legend with the map margin.
-    plot.tag.position = c(0.059, 1),
+    plot.title = element_text(face = "bold", size = 12),
     legend.position = "inside",
     legend.position.inside = c(0.008, 0.25),
     legend.justification = c(0, 0.5),
@@ -591,13 +592,14 @@ panel_c <- ggplot(
     breaks = study_count_breaks,
     expand = expansion(mult = c(0, 0.05))
   ) +
-  labs(x = "Number of studies", y = NULL, tag = "c.") +
+  labs(title = "Participant sex", x = "Number of studies", y = NULL, tag = "c.") +
   guides(fill = "none") +
   theme_minimal(base_size = 11) +
   theme(
     panel.grid.major.y = element_blank(),
     panel.grid.minor = element_blank(),
     plot.tag = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 12),
     axis.title.x = element_text(size = 11)
   )
 
@@ -655,21 +657,25 @@ panel_d <- ggplot(
     breaks = sample_size_breaks,
     expand = expansion(mult = c(0.05, 0.05))
   ) +
-  labs(x = NULL, y = "Sample size", tag = "d.") +
+  labs(title = "Sample size", x = NULL, y = "Sample size", tag = "d.") +
   theme_classic(base_size = 11) +
   theme(
     axis.text.x = element_blank(),
     axis.ticks.x = element_blank(),
     axis.line.x = element_blank(),
-    plot.tag = element_text(face = "bold")
+    plot.tag = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 12)
   )
 
 if (nrow(numeric_sample_sizes) == 0L) {
   panel_d <- ggplot() +
     annotate("text", x = 1, y = 1, label = "No usable sample sizes") +
-    labs(tag = "d.") +
+    labs(title = "Sample size", tag = "d.") +
     theme_void(base_size = 11) +
-    theme(plot.tag = element_text(face = "bold"))
+    theme(
+      plot.tag = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 12)
+    )
 }
 
 # Equal panel widths and small outer spacers align the lower row with the map.

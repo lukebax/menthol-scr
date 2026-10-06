@@ -633,7 +633,10 @@ if (nrow(form_counts) == 0L) {
     annotate("text", x = 1, y = 1, label = "No identified pharmaceutical form") +
     labs(title = "Pharmaceutical form", tag = "a.") +
     theme_void(base_size = 11) +
-    theme(plot.tag = element_text(face = "bold"))
+    theme(
+      plot.tag = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 12)
+    )
 }
 
 rain_colour <- "#74AF8D"
@@ -716,6 +719,7 @@ panel_b <- ggplot(
     expand = expansion(mult = c(0.02, 0.05))
   ) +
   labs(
+    title = "Menthol concentration",
     x = NULL,
     y = "Menthol concentration (%)",
     tag = "b."
@@ -729,6 +733,7 @@ panel_b <- ggplot(
     axis.text.y = element_text(size = 10),
     axis.title.y = element_text(size = 12, margin = margin(r = 3)),
     plot.tag = element_text(face = "bold"),
+    plot.title = element_text(face = "bold", size = 12),
     legend.position = "bottom",
     legend.title = element_text(size = 10),
     legend.text = element_text(size = 9)
@@ -737,9 +742,12 @@ panel_b <- ggplot(
 if (nrow(concentration_points) == 0L) {
   panel_b <- ggplot() +
     annotate("text", x = 1, y = 1, label = "No usable menthol concentration points") +
-    labs(tag = "b.") +
+    labs(title = "Menthol concentration", tag = "b.") +
     theme_void(base_size = 11) +
-    theme(plot.tag = element_text(face = "bold"))
+    theme(
+      plot.tag = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 12)
+    )
 }
 
 broad_comparator_counts <- tibble(
@@ -807,7 +815,10 @@ if (sum(broad_comparator_counts$studies) == 0L) {
     annotate("text", x = 1, y = 1, label = "No classified comparator roles") +
     labs(title = "Comparator roles", tag = "c.") +
     theme_void(base_size = 11) +
-    theme(plot.tag = element_text(face = "bold"))
+    theme(
+      plot.tag = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 12)
+    )
 }
 
 panel_d <- ggplot(
@@ -834,7 +845,10 @@ if (nrow(type_comparator_counts) == 0L) {
     annotate("text", x = 1, y = 1, label = "No identified comparator types") +
     labs(title = "Comparator types", tag = "d.") +
     theme_void(base_size = 11) +
-    theme(plot.tag = element_text(face = "bold"))
+    theme(
+      plot.tag = element_text(face = "bold"),
+      plot.title = element_text(face = "bold", size = 12)
+    )
 }
 
 figure_4 <- wrap_plots(
@@ -843,14 +857,7 @@ figure_4 <- wrap_plots(
   panel_c,
   panel_d,
   ncol = 2
-) +
-  plot_annotation(
-    caption = paste0(
-      "Studies may contribute to multiple forms, concentrations, and comparator categories.\n",
-      "Concentration points retain their reported percentage bases and qualifications; ranges and product percentages are excluded."
-    ),
-    theme = theme(plot.caption = element_text(hjust = 0, size = 9))
-  )
+)
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))
