@@ -13,6 +13,35 @@ suppressPackageStartupMessages({
   library(countrycode)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 input_path <- file.path("data", "data_extraction_form.csv")
 output_dir <- file.path("outputs", "03_study_populations")
 
@@ -22,8 +51,9 @@ studies <- read_csv(
   na = character(),
   show_col_types = FALSE
 )
+stop_for_problems(studies)
 
-# Keep checks short and tied to the requested outputs.
+# Check the inputs needed by this subsection.
 required_columns <- c(
   "record_id", "first_author", "publication_year", "study_design",
   "sample_size", "sample_size_basis", "pain_contexts", "participant_sex",
@@ -35,25 +65,43 @@ if (!all(required_columns %in% names(studies))) {
 if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
   stop("The extraction form must contain at least one study row and unique record_id values.")
 }
-if (any(is.na(studies)) || any(studies == "")) {
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
   stop("The extraction form contains a blank value.")
 }
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
+}
 
-allowed_designs <- c(
-  "Parallel groups", "Cross-over", "Pre-post", "Single arm", "Case report", "NI"
-)
-allowed_sample_bases <- c(
-  "randomised", "allocated_or_enrolled",
-  "started_eligible_menthol_intervention", "persons_described"
-)
-allowed_sexes <- c("Female", "Male", "Mixed", "NI")
-allowed_regions <- c("AFR", "AMR", "SEAR", "EUR", "EMR", "WPR")
+allowed_designs <- dictionary_values("study_design")
+allowed_sample_bases <- dictionary_values("sample_size_basis")
+allowed_sexes <- dictionary_values("participant_sex")
+allowed_regions <- setdiff(dictionary_values("who_region"), "NI")
+allowed_origins <- dictionary_values("pain_contexts", "Origins")
+allowed_contexts <- dictionary_values("pain_contexts", "Contexts")
+if (!setequal(allowed_origins, c("Induced", "Pre-existing")) ||
+    !setequal(allowed_sexes, c("Female", "Male", "Mixed", "NI"))) {
+  stop("The pain-origin or sex categories have changed; update the Section 03 summaries and figure.")
+}
 
 if (any(!studies$study_design %in% allowed_designs)) {
   stop("study_design contains an unexpected value.")
 }
 if (any(!studies$sample_size_basis %in% allowed_sample_bases)) {
   stop("sample_size_basis contains an unexpected value.")
+}
+# Check design-specific denominator bases even when the numerical count is NI.
+if (any(studies$study_design == "Case report" &
+        studies$sample_size_basis != "persons_described") ||
+    any(studies$study_design %in% c("Pre-post", "Single arm") &
+        studies$sample_size_basis != "started_eligible_menthol_intervention") ||
+    any(studies$study_design %in% c("Parallel groups", "Cross-over") &
+        !studies$sample_size_basis %in% c("randomised", "allocated_or_enrolled"))) {
+  stop("sample_size_basis does not match the study design; check the dictionary's denominator rules.")
 }
 if (any(!studies$participant_sex %in% allowed_sexes)) {
   stop("participant_sex contains an unexpected value.")
@@ -67,40 +115,24 @@ if (any((studies$country == "NI") != (studies$who_region == "NI")) ||
   stop("Missing country and WHO region values do not correspond.")
 }
 
-# Read controlled labels from the dictionary so accepted additions stay in sync.
-dictionary <- read_csv(
-  file.path("data", "data_dictionary.csv"),
+# Use the supplied dated lookup for country names and WHO region membership.
+country_regions <- read_csv(
+  file.path("data", "who_country_regions.csv"),
   col_types = cols(.default = col_character()),
   na = character(), show_col_types = FALSE
 )
-context_format <- dictionary$format_or_allowed_values[dictionary$column_name == "pain_contexts"]
-context_vocabulary <- str_match(context_format, "contexts: ([^;]+);")[, 2]
-if (length(context_vocabulary) != 1L || is.na(context_vocabulary) || !nzchar(context_vocabulary)) {
-  stop("Cannot read the pain-context vocabulary from the dictionary; check its list wording.")
+stop_for_problems(country_regions)
+lookup_columns <- c("country", "who_region", "who_region_name")
+if (!all(lookup_columns %in% names(country_regions))) {
+  stop("The country-region lookup is missing a required column.")
 }
-allowed_contexts <- str_split(context_vocabulary, ", ")[[1]]
-
-# Keep preferred English names in the dictionary, alongside their stable ISO identity.
-country_format <- dictionary$format_or_allowed_values[dictionary$column_name == "country"]
-country_override_clause <- str_match(
-  country_format,
-  "Preferred English short-name overrides \\(ISO3\\): ([^.]+)\\."
-)[, 2]
-if (length(country_override_clause) != 1L || is.na(country_override_clause) ||
-    !nzchar(country_override_clause) ||
-    str_count(country_format, fixed("Preferred English short-name overrides (ISO3): ")) != 1L) {
-  stop("Cannot read the preferred country names from the dictionary; check its override clause.")
+if (nrow(country_regions) == 0L ||
+    any(is.na(country_regions[lookup_columns])) ||
+    any(country_regions[lookup_columns] == "") ||
+    anyDuplicated(country_regions$country) ||
+    any(!country_regions$who_region %in% allowed_regions)) {
+  stop("The country-region lookup contains blank values, duplicate countries, or invalid regions.")
 }
-country_override_pairs <- str_match(
-  str_split(country_override_clause, " \\| ")[[1]],
-  "^([A-Z]{3})=([^|=;]+)$"
-)
-if (anyNA(country_override_pairs) ||
-    any(country_override_pairs[, 3] != str_trim(country_override_pairs[, 3])) ||
-    anyDuplicated(country_override_pairs[, 2]) || anyDuplicated(country_override_pairs[, 3])) {
-  stop("Preferred country-name overrides must contain valid, unique ISO3 codes and names.")
-}
-preferred_country_names <- setNames(country_override_pairs[, 3], country_override_pairs[, 2])
 
 # Split plural study characteristics in memory and confirm unique membership.
 country_memberships <- studies |>
@@ -133,36 +165,43 @@ if (any(region_memberships$who_region != "NI" &
 if (any(str_detect(studies$pain_contexts, "(^|; )NI(; |$)") & studies$pain_contexts != "NI") ||
     any(str_ends(context_pairs$context_pair, ": NI")) ||
     any(context_pairs$context_pair != "NI" &
-        !str_detect(context_pairs$context_pair, "^(Induced|Pre-existing): [^:;]+$"))) {
+        !str_detect(context_pairs$context_pair, "^[^:;]+: [^:;]+$"))) {
   stop("pain_contexts contains an invalid pair.")
 }
 
 if (any(context_pairs$context_pair != "NI" &
-        !str_remove(context_pairs$context_pair, "^[^:]+: ") %in% allowed_contexts)) {
+        (!str_remove(context_pairs$context_pair, ": .+$") %in% allowed_origins |
+         !str_remove(context_pairs$context_pair, "^[^:]+: ") %in% allowed_contexts))) {
   stop("pain_contexts contains a label absent from the dictionary.")
+}
+
+if (any(country_memberships$country != "NI" &
+        !country_memberships$country %in% country_regions$country)) {
+  stop("Use the preferred country names in data/who_country_regions.csv.")
+}
+expected_regions <- country_memberships |>
+  left_join(select(country_regions, country, who_region), by = "country") |>
+  mutate(who_region = if_else(country == "NI", "NI", who_region)) |>
+  distinct(record_id, who_region)
+if (nrow(anti_join(expected_regions, region_memberships, by = c("record_id", "who_region"))) ||
+    nrow(anti_join(region_memberships, expected_regions, by = c("record_id", "who_region")))) {
+  stop("The extracted WHO regions do not match the supplied country-region lookup.")
+}
+region_order <- expected_regions |>
+  summarise(expected = str_c(who_region, collapse = "; "), .by = record_id) |>
+  left_join(select(studies, record_id, who_region), by = "record_id")
+if (any(region_order$expected != region_order$who_region)) {
+  stop("WHO regions must follow country order, with each region retained once.")
 }
 
 country_memberships <- country_memberships |>
   filter(country != "NI") |>
   mutate(
-    iso3 = countrycode(country, origin = "country.name", destination = "iso3c"),
-    iso2 = countrycode(country, origin = "country.name", destination = "iso2c")
+    # Unmatched map codes are disclosed on the figure and retain their study counts.
+    iso3 = countrycode(country, origin = "country.name", destination = "iso3c", warn = FALSE),
+    iso2 = countrycode(country, origin = "country.name", destination = "iso2c", warn = FALSE)
   ) |>
   distinct(record_id, country, iso3, iso2)
-
-if (any(is.na(country_memberships$iso3)) || any(is.na(country_memberships$iso2))) {
-  stop("A country could not be converted to an ISO code.")
-}
-
-# Country-name variants share one study-country membership and map polygon.
-# Apply the dictionary's preferred display names without changing extraction text.
-country_memberships <- country_memberships |>
-  mutate(country = coalesce(
-    unname(preferred_country_names[iso3]),
-    countrycode(iso3, origin = "iso3c", destination = "country.name")
-  )) |>
-  distinct(record_id, country, iso3, iso2)
-
 region_memberships <- region_memberships |>
   filter(who_region != "NI") |>
   distinct(record_id, who_region)
@@ -185,14 +224,13 @@ country_counts <- country_memberships |>
   arrange(desc(studies), country, .locale = "en") |>
   mutate(country_rank = dense_rank(desc(studies)))
 
-region_names <- c(
-  AFR = "African Region",
-  AMR = "Region of the Americas",
-  SEAR = "South-East Asia Region",
-  EUR = "European Region",
-  EMR = "Eastern Mediterranean Region",
-  WPR = "Western Pacific Region"
-)
+region_names <- country_regions |>
+  distinct(who_region, who_region_name)
+if (anyDuplicated(region_names$who_region) ||
+    !setequal(region_names$who_region, allowed_regions)) {
+  stop("The country-region lookup must give one name for each permitted WHO region.")
+}
+region_names <- setNames(region_names$who_region_name, region_names$who_region)
 
 region_counts <- region_memberships |>
   count(who_region, name = "studies") |>
@@ -370,22 +408,36 @@ if (
 
 # Build the study-population figure from the same derived counts.
 world <- rnaturalearth::ne_countries(scale = 110, returnclass = "sf") |>
-  filter(admin != "Antarctica")
+  filter(admin != "Antarctica") |>
+  mutate(map_iso3 = if_else(str_detect(iso_a3_eh, "^[A-Z]{3}$"), iso_a3_eh, NA_character_))
 
-if (anyDuplicated(world$adm0_a3)) {
-  stop("The Natural Earth map contains a repeated country join code.")
+if (anyDuplicated(na.omit(world$map_iso3))) {
+  stop("The Natural Earth map contains a repeated ISO country code; review its geographic units.")
 }
 
+# Use ISO-to-ISO joins. Administrative map codes are a different coding scheme.
+# Small countries and territories absent from this map remain in all summaries.
+unmapped_countries <- country_counts |>
+  filter(is.na(iso3) | !iso3 %in% world$map_iso3)
+mapped_country_counts <- country_counts |>
+  filter(!is.na(iso3), iso3 %in% world$map_iso3)
+maximum_country_count <- max(c(0L, mapped_country_counts$studies))
+
 world_counts <- world |>
-  left_join(country_counts, by = c("adm0_a3" = "iso3"), relationship = "one-to-one") |>
+  left_join(
+    mapped_country_counts,
+    by = c("map_iso3" = "iso3"),
+    relationship = "one-to-one",
+    na_matches = "never"
+  ) |>
   mutate(
     study_count = factor(
       studies,
-      levels = as.character(seq_len(max(c(0L, country_counts$studies))))
+      levels = as.character(seq_len(maximum_country_count))
     )
   )
 
-if (sum(!is.na(world_counts$studies)) != nrow(country_counts)) {
+if (sum(!is.na(world_counts$studies)) != nrow(mapped_country_counts)) {
   stop("A study country did not join exactly once to the Natural Earth map.")
 }
 
@@ -401,7 +453,8 @@ country_label_geometry <- studied_countries |>
   st_transform(st_crs(world_counts))
 
 country_labels <- studied_countries |>
-  st_drop_geometry()
+  st_drop_geometry() |>
+  mutate(map_label = coalesce(iso2, country))
 country_labels <- if (nrow(country_labels) > 0L) {
   bind_cols(country_labels, as.data.frame(st_coordinates(country_label_geometry)))
 } else {
@@ -412,7 +465,6 @@ base_country_colours <- c(
   `1` = "#DBEEC8", `2` = "#BFDEBA", `3` = "#B2D6B3",
   `4` = "#A4CEAB", `5` = "#8BBF9D", `6` = "#75B08E"
 )
-maximum_country_count <- max(c(0L, country_counts$studies))
 country_colours <- if (maximum_country_count <= length(base_country_colours)) {
   base_country_colours[seq_len(maximum_country_count)]
 } else {
@@ -480,7 +532,7 @@ map_plot <- ggplot() +
   ) +
   geom_text(
     data = country_labels,
-    aes(x = X, y = Y, label = iso2),
+    aes(x = X, y = Y, label = map_label),
     size = 3,
     colour = "black"
   ) +
@@ -495,7 +547,7 @@ map_plot <- ggplot() +
   theme_void(base_size = 11) +
   theme(
     plot.tag = element_text(face = "bold"),
-    # Keep the tag and legend on the author-approved vertical guides.
+    # Align the panel tag and legend with the map margin.
     plot.tag.position = c(0.059, 1),
     legend.position = "inside",
     legend.position.inside = c(0.008, 0.25),
@@ -510,7 +562,11 @@ map_plot <- ggplot() +
 
 if (maximum_country_count == 0L) {
   map_plot <- map_plot +
-    annotate("text", x = 0, y = 0, label = "No identified study countries")
+    annotate(
+      "text", x = 0, y = 0,
+      label = if (nrow(country_counts) == 0L) "No identified study countries" else
+        "Study countries are listed below the figure"
+    )
 }
 
 sex_colours <- c(
@@ -622,6 +678,15 @@ lower_row <- (plot_spacer() | panel_b | panel_c | panel_d | plot_spacer()) +
 
 figure_3 <- map_plot / lower_row +
   plot_layout(heights = c(1, 0.85))
+
+if (nrow(unmapped_countries) > 0L) {
+  map_note <- paste0(
+    "Not separately represented on this map (number of studies): ",
+    paste0(unmapped_countries$country, " (", unmapped_countries$studies, ")", collapse = "; "),
+    ". All countries contribute to the country and regional summaries."
+  )
+  figure_3 <- figure_3 + plot_annotation(caption = str_wrap(map_note, width = 150))
+}
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))

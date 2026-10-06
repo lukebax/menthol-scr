@@ -11,6 +11,35 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 output_dir <- file.path("outputs", "05_topical_menthol_analgesic_efficacy")
 count_fields <- c(
   "efficacy_result_count", "efficacy_effect_estimate_count",
@@ -24,29 +53,50 @@ studies <- read_csv(
   file.path("data", "data_extraction_form.csv"),
   col_types = cols(.default = col_character()),
   na = character(), show_col_types = FALSE
-) |>
-  select(all_of(required_columns))
+)
+stop_for_problems(studies)
+if (!all(required_columns %in% names(studies))) {
+  stop("The extraction form is missing a column needed for Section 05.")
+}
+studies <- studies |> select(all_of(required_columns))
 
 # Check the few input rules that directly affect these summaries.
-if (nrow(studies) == 0L || anyDuplicated(studies$record_id) ||
-    any(is.na(studies)) || any(studies == "")) {
-  stop("Section 05 needs at least one study row, unique record IDs, and no blank required values.")
+if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
+  stop("The extraction form must contain at least one study row and unique record_id values.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
+  stop("The extraction form contains a blank value.")
+}
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
+}
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
 }
 if (any(!grepl("^([0-9]+|NI)$", studies$efficacy_result_count)) ||
     any(!grepl("^([0-9]+|NI|N/A)$", studies$efficacy_effect_estimate_count)) ||
     any(!grepl("^([0-9]+|NI|N/A)$", studies$efficacy_effect_estimate_with_precision_count))) {
   stop("The efficacy counts must follow the integer, NI, and N/A dictionary rules.")
 }
+if (any(!studies$study_design %in% dictionary_values("study_design"))) {
+  stop("study_design contains an unexpected value.")
+}
 case_report <- studies$study_design == "Case report"
 if (any((studies$efficacy_effect_estimate_count == "N/A") != case_report) ||
     any((studies$efficacy_effect_estimate_with_precision_count == "N/A") != case_report)) {
   stop("Use paired N/A for descriptive case reports, independently of their first count.")
 }
+allowed_registration <- dictionary_values("study_registration")
 registration_levels <- c(
   "Prospective", "Retrospective",
   "No sufficiently matched public registry record located", "Unresolved"
 )
-if (any(!studies$study_registration %in% c(registration_levels[1:3], "NI"))) {
+if (!setequal(allowed_registration, c(registration_levels[1:3], "NI"))) {
+  stop("The registration categories have changed; update the Section 05 summaries and legend.")
+}
+if (any(!studies$study_registration %in% allowed_registration)) {
   stop("study_registration contains an unexpected value.")
 }
 
@@ -91,7 +141,7 @@ if (any(
   is.na(non_cases$efficacy_effect_estimate_count) &
     non_cases$efficacy_effect_estimate_with_precision_count > 0, na.rm = TRUE
 )) {
-  stop("Confirmed availability requires positive confirmed upstream counts.")
+  stop("A confirmed available estimate or precision measure requires a positive count of its eligible comparisons.")
 }
 result_counts <- studies$efficacy_result_count[!is.na(studies$efficacy_result_count)]
 

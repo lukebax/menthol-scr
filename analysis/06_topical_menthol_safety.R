@@ -8,6 +8,35 @@ suppressPackageStartupMessages({
   library(officer)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 output_dir <- file.path("outputs", "06_topical_menthol_safety")
 studies <- read_csv(
   file.path("data", "data_extraction_form.csv"),
@@ -15,11 +44,15 @@ studies <- read_csv(
   na = character(),
   show_col_types = FALSE
 )
+stop_for_problems(studies)
 
-reporting_order <- c(
+reporting_order <- dictionary_values("adverse_event_reporting")
+if (!identical(reporting_order, c(
   "Events reported", "Explicitly no events reported",
   "Limited or unclear information", "NI"
-)
+))) {
+  stop("The adverse-event categories have changed; update the Section 06 result labels and ordering.")
+}
 required_columns <- c(
   "record_id", "first_author", "publication_year",
   "adverse_event_reporting", "adverse_event_details"
@@ -27,9 +60,19 @@ required_columns <- c(
 if (!all(required_columns %in% names(studies))) {
   stop("The extraction form is missing a required Section 06 column.")
 }
-if (nrow(studies) == 0L || anyDuplicated(studies$record_id) ||
-    any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
-  stop("The extraction form must contain at least one completed study row with unique record IDs.")
+if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
+  stop("The extraction form must contain at least one study row and unique record_id values.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
+  stop("The extraction form contains a blank value.")
+}
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
+}
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
 }
 if (any(!studies$adverse_event_reporting %in% reporting_order) ||
     any(studies$adverse_event_details == "N/A") ||
@@ -72,7 +115,7 @@ table_2 <- studies |>
   filter(adverse_event_reporting != "NI") |>
   arrange(
     match(adverse_event_reporting, reporting_order),
-    tolower(first_author), publication_year, record_id
+    first_author, publication_year, record_id, .locale = "en"
   ) |>
   select(study, adverse_event_reporting, adverse_event_details)
 
@@ -102,7 +145,11 @@ table_word <- flextable(table_2) |>
   width(j = "adverse_event_reporting", width = 1.55) |>
   width(j = "adverse_event_details", width = 4.35) |>
   add_footer_lines(values = paste(
-    "Studies with no relevant adverse-event information identified (NI) are omitted.",
+    if (nrow(table_2) == 0L) {
+      "No relevant adverse-event information was identified in any included study."
+    } else {
+      "Studies with no relevant adverse-event information identified (NI) are omitted."
+    },
     "Limited or unclear reporting is not an explicit report of zero events.",
     "These reporting categories do not establish causation or adverse-event incidence."
   )) |>

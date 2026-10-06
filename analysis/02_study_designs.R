@@ -10,6 +10,35 @@ suppressPackageStartupMessages({
   library(patchwork)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 input_path <- file.path("data", "data_extraction_form.csv")
 output_dir <- file.path("outputs", "02_study_designs")
 
@@ -19,8 +48,9 @@ studies <- read_csv(
   na = character(),
   show_col_types = FALSE
 )
+stop_for_problems(studies)
 
-# Keep checks short and tied to the requested outputs.
+# Check the inputs needed by this subsection.
 required_columns <- c(
   "record_id", "first_author", "publication_year", "study_design",
   "pain_contexts", "pain_measurements", "participant_sex"
@@ -31,14 +61,20 @@ if (!all(required_columns %in% names(studies))) {
 if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
   stop("The extraction form must contain at least one study row with unique record IDs.")
 }
-if (any(is.na(studies)) || any(studies == "")) {
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
   stop("The extraction form contains a blank value.")
 }
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
+}
 
-allowed_designs <- c(
-  "Parallel groups", "Cross-over", "Pre-post", "Single arm", "Case report", "NI"
-)
-sex_levels <- c("Female", "Male", "Mixed", "NI")
+allowed_designs <- dictionary_values("study_design")
+sex_levels <- dictionary_values("participant_sex")
 sex_legend_order <- c("Mixed", "Male", "Female", "NI")
 if (any(!studies$study_design %in% allowed_designs)) {
   stop("study_design contains an unexpected value.")
@@ -47,31 +83,13 @@ if (any(!studies$participant_sex %in% sex_levels)) {
   stop("participant_sex contains an unexpected value.")
 }
 
-# Read controlled labels from the dictionary so accepted additions stay in sync.
-dictionary <- read_csv(
-  file.path("data", "data_dictionary.csv"),
-  col_types = cols(.default = col_character()),
-  na = character(), show_col_types = FALSE
-)
-context_format <- dictionary$format_or_allowed_values[dictionary$column_name == "pain_contexts"]
-context_vocabulary <- str_match(context_format, "contexts: ([^;]+);")[, 2]
-if (length(context_vocabulary) != 1L || is.na(context_vocabulary) || !nzchar(context_vocabulary)) {
-  stop("Cannot read the pain-context vocabulary from the dictionary; check its list wording.")
+allowed_origins <- dictionary_values("pain_contexts", "Origins")
+allowed_contexts <- dictionary_values("pain_contexts", "Contexts")
+allowed_methods <- dictionary_values("pain_measurements", "Methods")
+if (!setequal(allowed_origins, c("Induced", "Pre-existing")) ||
+    !setequal(sex_levels, sex_legend_order)) {
+  stop("The pain-origin or sex categories have changed; update the Section 02 figure panels and legend.")
 }
-allowed_contexts <- str_split(context_vocabulary, ", ")[[1]]
-measurement_format <- dictionary$format_or_allowed_values[dictionary$column_name == "pain_measurements"]
-method_vocabulary <- str_match(
-  measurement_format,
-  "store the method labels (.+), without the parenthetical explanations\\."
-)[, 2]
-if (length(method_vocabulary) != 1L || is.na(method_vocabulary) || !nzchar(method_vocabulary)) {
-  stop("Cannot read the measurement-method vocabulary from the dictionary; check its list wording.")
-}
-allowed_methods <- method_vocabulary |>
-  str_remove_all(" \\([^()]*\\)") |>
-  str_replace(", or ", ", ") |>
-  str_split(", ") |>
-  unlist(use.names = FALSE)
 
 context_pairs <- studies |>
   select(record_id, participant_sex, pain_contexts) |>
@@ -86,7 +104,7 @@ measurement_pairs <- studies |>
 if (
   any(str_detect(studies$pain_contexts, "(^|; )NI(; |$)") & studies$pain_contexts != "NI") ||
   any(context_pairs$context_pair != "NI" &
-        !str_detect(context_pairs$context_pair, "^(Induced|Pre-existing): [^:;]+$")) ||
+        !str_detect(context_pairs$context_pair, "^[^:;]+: [^:;]+$")) ||
   any(str_ends(context_pairs$context_pair, ": NI")) ||
   anyDuplicated(paste(context_pairs$record_id, context_pairs$context_pair, sep = "\r"))
 ) {
@@ -106,7 +124,8 @@ if (
 }
 
 if (any(context_pairs$context_pair != "NI" &
-        !str_remove(context_pairs$context_pair, "^[^:]+: ") %in% allowed_contexts)) {
+        (!str_remove(context_pairs$context_pair, ": .+$") %in% allowed_origins |
+         !str_remove(context_pairs$context_pair, "^[^:]+: ") %in% allowed_contexts))) {
   stop("pain_contexts contains a label absent from the dictionary.")
 }
 if (any(measurement_pairs$measurement_pair != "NI" &

@@ -8,6 +8,35 @@ suppressPackageStartupMessages({
   library(officer)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 input_path <- file.path("data", "data_extraction_form.csv")
 output_dir <- file.path("outputs", "01_study_selection_and_characteristics")
 
@@ -17,18 +46,32 @@ studies <- read_csv(
   na = character(),
   show_col_types = FALSE
 )
+stop_for_problems(studies)
 
-# Keep the input checks short and directly tied to the requested outputs.
+# Check the inputs needed by this subsection.
+required_columns <- c(
+  "record_id", "first_author", "publication_year", "study_design", "sample_size",
+  "pain_type", "pharmaceutical_form", "application_site", "co_intervention", "comparator"
+)
+if (!all(required_columns %in% names(studies))) {
+  stop("The extraction form is missing a column needed for Section 01.")
+}
 if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
   stop("The extraction form must contain at least one study row with unique record IDs.")
 }
-if (any(is.na(studies)) || any(studies == "")) {
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
   stop("The extraction form contains a blank value.")
 }
-# Arrange studies in the agreed design groups, then alphabetically by author.
-design_order <- c(
-  "Parallel groups", "Cross-over", "Pre-post", "Single arm", "Case report", "NI"
-)
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
+}
+# Arrange studies in dictionary design order, then alphabetically by author.
+design_order <- dictionary_values("study_design")
 if (any(!studies$study_design %in% design_order)) {
   stop("study_design contains an unexpected value.")
 }
@@ -36,14 +79,13 @@ if (any(!grepl("^(0|[1-9][0-9]*|NI)$", studies$sample_size))) {
   stop("sample_size must be a whole number or NI.")
 }
 
-# Table 1 displays descriptions, stripping current role tags and legacy tags
-# without translating either into a different scientific classification.
+# Table 1 displays the comparator descriptions without the role/type labels.
 format_comparator_for_table <- function(x) {
   vapply(
     strsplit(x, "; ", fixed = TRUE),
     function(profiles) {
       descriptions <- sub(
-        " \\[(?:Therapeutic|Control|Active|Inactive): [^]]+\\]$",
+        " \\[(?:Therapeutic|Control): [^]]+\\]$",
         "",
         profiles,
         perl = TRUE

@@ -7,10 +7,22 @@ Extracted study data and reproducible R analyses for a scoping review of topical
 - `analysis/`: six numbered R scripts, one for each Results subsection.
 - `data/data_extraction_form.csv`: study-level extracted data.
 - `data/data_dictionary.csv`: definitions, extraction rules, and permitted values for every data column.
+- `data/extraction_instructions.md`: the extraction procedure and source-checking instructions.
+- `data/who_country_regions.csv`: the dated country-to-WHO-region reference used during extraction.
 - `menthol-scr.Rproj`: the RStudio project.
 - `LICENSE`: MIT licence.
 
 `NI` means applicable information was not identified; `N/A` means the field does not apply under its dictionary rule.
+
+## Extracting study data
+
+The complete extraction package is the four files in [`data/`](data/). Start with [extraction_instructions.md](data/extraction_instructions.md), then use the [dictionary](data/data_dictionary.csv) to complete the [form](data/data_extraction_form.csv). The instructions include guidance for opening and saving the CSV files in a spreadsheet application. The package can be used independently with the relevant articles and supporting sources; running the R scripts is not required for extraction.
+
+Use one row per included study. For a newly included study, assign the next unused `R001`-style identifier and extract the bibliographic information from its report. Keep existing identifiers stable when sorting or revisiting the form. Record the EPPI-Reviewer identifier when supplied, or `N/A` if no such record exists. Follow the field-specific rules for participant counts, multiple entries, and missing information, and retain the supporting source locations in one evidence note per study.
+
+For an independent re-extraction, begin with a blank proposed row and the study identifiers, check it against the sources, and reconcile it with the existing row before replacing any data. Preserve the evidence for any correction. An unfinished blank is not equivalent to `NI`, `N/A`, or zero. Run the analyses only when all included rows are complete.
+
+The dictionary defines the permitted categories. If a new study requires an additional category, resolve its definition and update the dictionary and affected analysis checks, labels, ordering, and colours together before including it in the results. The [country-region lookup](data/who_country_regions.csv) preserves the classification dated in the extraction instructions; do not silently replace it with a later classification.
 
 ## Running the analyses
 
@@ -44,6 +56,8 @@ The scripts create `outputs/` automatically, with one subfolder per subsection:
 | 06 | Table 2: adverse-event reporting, as CSV and Word files |
 
 Each script also writes an `in_text_results.csv` containing named summary values. Together, the scripts produce four PNG figures, two CSV/Word table pairs, and six summary CSVs: 14 files. Re-running a script replaces its generated files.
+
+Countries not separately represented in the coarse world map are listed with their study counts beneath Figure 3 and remain included in the country and regional summaries.
 
 The `outputs/` folder is intentionally excluded from Git. Generated results are reproduced locally from the supplied data and scripts.
 

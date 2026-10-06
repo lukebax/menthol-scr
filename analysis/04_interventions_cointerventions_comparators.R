@@ -11,6 +11,35 @@ suppressPackageStartupMessages({
   library(ggrain)
 })
 
+# Category lists have labelled lines in the dictionary; explanatory prose is not parsed.
+dictionary <- read_csv(
+  file.path("data", "data_dictionary.csv"),
+  col_types = cols(.default = col_character()),
+  na = character(), show_col_types = FALSE
+)
+stop_for_problems(dictionary)
+dictionary_values <- function(field, label = "Values") {
+  if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
+    stop("The dictionary is missing its field-name or allowed-values column.")
+  }
+  definition <- dictionary$format_or_allowed_values[dictionary$column_name == field]
+  if (length(definition) != 1L || is.na(definition)) {
+    stop("The dictionary must contain exactly one row for ", field, ".")
+  }
+  prefix <- paste0(label, ": ")
+  lines <- strsplit(definition, "\n", fixed = TRUE)[[1]]
+  list_line <- lines[startsWith(lines, prefix)]
+  if (length(list_line) != 1L) {
+    stop("The dictionary needs one '", label, "' list for ", field, ".")
+  }
+  values <- strsplit(substring(list_line, nchar(prefix) + 1L), "; ", fixed = TRUE)[[1]]
+  if (!length(values) || any(!nzchar(values)) || any(values != trimws(values)) ||
+      anyDuplicated(values) || any(grepl(";", values, fixed = TRUE))) {
+    stop("The dictionary contains an invalid or repeated ", label, " entry for ", field, ".")
+  }
+  values
+}
+
 input_path <- file.path("data", "data_extraction_form.csv")
 output_dir <- file.path("outputs", "04_interventions_cointerventions_comparators")
 
@@ -20,8 +49,9 @@ studies <- read_csv(
   na = character(),
   show_col_types = FALSE
 )
+stop_for_problems(studies)
 
-# Keep checks short and tied to the requested outputs.
+# Check the inputs needed by this subsection.
 required_columns <- c(
   "record_id", "first_author", "publication_year", "pharmaceutical_form",
   "application_site", "co_intervention", "comparator",
@@ -33,8 +63,16 @@ if (!all(required_columns %in% names(studies))) {
 if (nrow(studies) == 0L || anyDuplicated(studies$record_id)) {
   stop("The extraction form must contain at least one study row and unique record_id values.")
 }
-if (any(is.na(studies)) || any(studies == "")) {
+if (any(!grepl("^R([0-9]{3}|[1-9][0-9]{3,})$", studies$record_id)) ||
+    any(studies$record_id == "R000")) {
+  stop("record_id must use R001-style study identifiers.")
+}
+if (any(is.na(studies)) || any(trimws(as.matrix(studies)) == "")) {
   stop("The extraction form contains a blank value.")
+}
+if (any(!grepl("^[0-9]{4}$", studies$publication_year)) ||
+    any(studies$first_author %in% c("NI", "N/A"))) {
+  stop("Each study needs a first-author name and a four-digit publication year.")
 }
 
 studies <- studies |>
@@ -81,17 +119,25 @@ for (field_name in names(plural_entries)) {
   field_entries <- plural_entries[[field_name]]
   if (
     any(field_entries$entry == "") ||
+      any(field_entries$entry != str_trim(field_entries$entry)) ||
+      any(str_detect(field_entries$entry, fixed(";"))) ||
       anyDuplicated(paste(field_entries$record_id, field_entries$entry, sep = "\r"))
   ) {
-    stop(field_name, " contains an empty or repeated entry within a study.")
+    stop(field_name, " needs distinct non-empty entries separated by exactly '; ', without surrounding spaces.")
+  }
+}
+
+for (field_name in c("pharmaceutical_form", "application_site")) {
+  if (any(str_detect(studies[[field_name]], "(^|; )NI(; |$)") &
+          studies[[field_name]] != "NI")) {
+    stop(field_name, " needs scoped NI for an unresolved component alongside known entries.")
   }
 }
 
 # Validate the compact field grammars before deriving any counts.
-allowed_forms <- c(
-  "Ointment", "Cream", "Gel", "Lotion", "Solution", "Foam", "Spray",
-  "Ground peppermint", "Ground menthol", "Peppermint oil"
-)
+allowed_forms <- dictionary_values("pharmaceutical_form")
+allowed_purposes <- dictionary_values("menthol_concentration", "Purpose labels")
+allowed_bases <- dictionary_values("menthol_concentration", "Bases")
 unresolved_pattern <- "^NI(?: \\([^;()]+\\))?$"
 if (any(!form_entries$entry %in% allowed_forms &
         !str_detect(form_entries$entry, unresolved_pattern))) {
@@ -111,22 +157,22 @@ if (
   stop("application_site or co_intervention contains invalid missingness.")
 }
 
+# Points, ranges, and product percentages retain their reported qualifications.
+# Only point percentages explicitly describing menthol enter the concentration plot.
 point_pattern <- paste0(
   "^(approximately )?([0-9]+(?:\\.[0-9]+)?)% menthol ",
-  "\\((w/w|w/v|v/v|v/w|basis not reported)(?:, converted from (.+))?\\)$"
+  "\\(([^(),]+)(?:, (.+))?\\)$"
 )
 range_pattern <- paste0(
-  "^([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)% menthol ",
-  "\\((w/w|w/v|v/v|v/w|basis not reported)\\)$"
+  "^(approximately )?([0-9]+(?:\\.[0-9]+)?)-([0-9]+(?:\\.[0-9]+)?)% menthol ",
+  "\\(([^(),]+)(?:, (.+))?\\)$"
 )
-peppermint_pattern <- paste0(
-  "^[0-9]+(?:\\.[0-9]+)?% peppermint(?: oil)? ",
-  "\\((?:(?:w/w|w/v|v/v|v/w|basis not reported), )?",
-  "menthol concentration not established\\)$"
+product_pattern <- paste0(
+  "^(approximately )?([0-9]+(?:\\.[0-9]+)?)(?:-([0-9]+(?:\\.[0-9]+)?))?% ",
+  "([^;\\[\\]]+) \\((?:([^(),]+), )?",
+  "menthol concentration not established(?:, (.+))?\\)$"
 )
-purpose_pattern <- paste0(
-  " \\[Purpose: (Therapeutic|Masking/control|Both|NI|Pending review)\\]$"
-)
+purpose_pattern <- " \\[Purpose: ([^]]+)\\]$"
 purpose_parts <- str_match(concentration_entries$entry, purpose_pattern)
 
 concentration_entries <- concentration_entries |>
@@ -135,13 +181,13 @@ concentration_entries <- concentration_entries |>
     concentration_purpose = purpose_parts[, 2],
     is_point = str_detect(concentration_entry, point_pattern),
     is_range = str_detect(concentration_entry, range_pattern),
-    is_peppermint_product = str_detect(concentration_entry, peppermint_pattern),
+    is_product_percentage = str_detect(concentration_entry, product_pattern),
     is_unresolved = str_detect(concentration_entry, unresolved_pattern)
   )
 
 if (any(rowSums(select(
   concentration_entries,
-  is_point, is_range, is_peppermint_product, is_unresolved
+  is_point, is_range, is_product_percentage, is_unresolved
 )) != 1L)) {
   stop("menthol_concentration contains an invalid entry.")
 }
@@ -160,23 +206,46 @@ if (anyDuplicated(paste(
 }
 
 range_parts <- str_match(concentration_entries$concentration_entry, range_pattern)
-if (any(
-  concentration_entries$is_range &
-    as.double(range_parts[, 2]) > as.double(range_parts[, 3])
-, na.rm = TRUE)) {
-  stop("A menthol concentration range has descending endpoints.")
+point_parts <- str_match(concentration_entries$concentration_entry, point_pattern)
+product_parts <- str_match(concentration_entries$concentration_entry, product_pattern)
+reported_bases <- c(point_parts[, 4], range_parts[, 5], product_parts[, 6])
+reported_qualifications <- c(point_parts[, 5], range_parts[, 6], product_parts[, 7])
+reported_labels <- c(reported_qualifications, product_parts[, 5])
+reported_labels <- reported_labels[!is.na(reported_labels)]
+reported_percentages <- as.double(c(
+  point_parts[, 3], range_parts[, 3], range_parts[, 4],
+  product_parts[, 3], product_parts[, 4]
+))
+if (any(!is.finite(reported_percentages[!is.na(reported_percentages)]))) {
+  stop("Concentration percentages must be finite numbers.")
+}
+if (any(!nzchar(str_trim(reported_labels))) ||
+    any(reported_labels != str_trim(reported_labels))) {
+  stop("A concentration qualification or product label is empty or has surrounding spaces.")
+}
+if (any(!reported_bases[!is.na(reported_bases)] %in% allowed_bases) ||
+    any(!concentration_entries$concentration_purpose[
+      !is.na(concentration_entries$concentration_purpose)
+    ] %in% allowed_purposes)) {
+  stop("A concentration basis or purpose label is absent from the dictionary.")
+}
+if (any(as.double(range_parts[, 3]) > as.double(range_parts[, 4]), na.rm = TRUE) ||
+    any(as.double(product_parts[, 3]) > as.double(product_parts[, 4]), na.rm = TRUE)) {
+  stop("A concentration range has descending endpoints.")
+}
+if (any(str_trim(product_parts[, 5]) == "menthol", na.rm = TRUE)) {
+  stop("Use the menthol point or range format for a menthol percentage, not the product-percentage format.")
 }
 
 # Parse point concentrations while retaining basis and qualification for
-# within-study deduplication. Ranges and peppermint-product percentages remain
+# within-study deduplication. Ranges and product percentages remain
 # informative extraction values but are not plotted as point estimates.
-point_parts <- str_match(concentration_entries$concentration_entry, point_pattern)
 concentration_points <- concentration_entries |>
   mutate(
     point_approximate = point_parts[, 2],
     point_percent = as.double(point_parts[, 3]),
     point_basis = point_parts[, 4],
-    point_conversion = point_parts[, 5]
+    point_qualification = point_parts[, 5]
   ) |>
   filter(is_point) |>
   transmute(
@@ -185,10 +254,10 @@ concentration_points <- concentration_entries |>
     concentration_basis = point_basis,
     concentration_purpose,
     qualification = case_when(
-      !is.na(point_approximate) & !is.na(point_conversion) ~
-        paste0("approximately; converted from ", point_conversion),
+      !is.na(point_approximate) & !is.na(point_qualification) ~
+        paste0("approximately; ", point_qualification),
       !is.na(point_approximate) ~ "approximately",
-      !is.na(point_conversion) ~ paste0("converted from ", point_conversion),
+      !is.na(point_qualification) ~ point_qualification,
       TRUE ~ "direct"
     )
   ) |>
@@ -204,10 +273,7 @@ if (anyDuplicated(select(
 
 # Comparator profiles keep the source-near description, reported role, and
 # controlled types together. Ingredients alone do not determine the role.
-# Bare or scoped NI is unresolved status; legacy composition tags need review.
-if (any(str_detect(comparator_entries$entry, "\\[(?:Active|Inactive):"))) {
-  stop("Legacy Active/Inactive comparator tags require source review before Section 04 can run; they cannot be automatically translated to Therapeutic/Control.")
-}
+# Bare or scoped NI retains unresolved comparator information.
 if (any(str_detect(studies$comparator, "(^|; )N/A(; |$)") &
         studies$comparator != "N/A")) {
   stop("N/A must stand alone in comparator.")
@@ -263,40 +329,8 @@ if (anyDuplicated(paste(
   stop("A comparator profile repeats a controlled type.")
 }
 
-# Read controlled types from the dictionary so accepted additions stay in sync.
-dictionary <- read_csv(
-  file.path("data", "data_dictionary.csv"),
-  col_types = cols(.default = col_character()),
-  na = character(),
-  show_col_types = FALSE
-)
-if (!all(c("column_name", "format_or_allowed_values") %in% names(dictionary))) {
-  stop("Cannot read the comparator vocabulary from the dictionary; required columns are missing.")
-}
-comparator_format <- dictionary$format_or_allowed_values[
-  dictionary$column_name == "comparator"
-]
-if (length(comparator_format) != 1L || is.na(comparator_format)) {
-  stop("Cannot read the comparator vocabulary from the dictionary; expected one comparator row.")
-}
-comparator_vocabularies <- list()
-for (role in c("Control", "Therapeutic")) {
-  vocabulary <- str_match(comparator_format, paste0(role, " types: ([^.]+)\\."))[, 2]
-  if (is.na(vocabulary) || !nzchar(vocabulary)) {
-    stop("Cannot read the ", role, " comparator vocabulary from the dictionary; check its list wording.")
-  }
-  types <- str_split(vocabulary, ", ")[[1]]
-  if (
-    any(!nzchar(types)) || any(types != str_trim(types)) ||
-      anyDuplicated(types) || any(types %in% c("NI", "N/A")) ||
-      any(str_detect(types, "[,;\\[\\]+]"))
-  ) {
-    stop("The ", role, " comparator vocabulary contains an invalid or repeated label.")
-  }
-  comparator_vocabularies[[role]] <- types
-}
-control_types <- comparator_vocabularies$Control
-therapeutic_types <- comparator_vocabularies$Therapeutic
+control_types <- dictionary_values("comparator", "Control types")
+therapeutic_types <- dictionary_values("comparator", "Therapeutic types")
 if (
   any(comparator_types$comparator_role == "Control" &
         !comparator_types$comparator_type %in% c(control_types, "NI")) ||
@@ -538,6 +572,13 @@ form_colours <- c(
   `Peppermint oil` = "#B18C52"
 )
 
+# Give any additional permitted forms a neutral grey colour.
+additional_forms <- setdiff(allowed_forms, names(form_colours))
+form_colours <- c(
+  form_colours,
+  setNames(rep("#808080", length(additional_forms)), additional_forms)
+)
+
 form_plot_data <- form_counts |>
   mutate(
     pharmaceutical_form = factor(
@@ -593,16 +634,17 @@ purpose_colours <- c(
   Therapeutic = "#0072B2",
   `Masking/control` = "#D55E00",
   Both = "#CC79A7",
-  NI = "#555555",
-  `Pending review` = "#B3B3B3"
+  NI = "#555555"
 )
 purpose_labels <- c(
   Therapeutic = "Therapeutic intent",
   `Masking/control` = "Masking/nominal\nplacebo",
   Both = "Both purposes",
-  NI = "Purpose unclear",
-  `Pending review` = "Purpose not yet reviewed"
+  NI = "Purpose unclear"
 )
+if (!setequal(allowed_purposes, names(purpose_colours))) {
+  stop("The concentration-purpose categories have changed; update the Section 04 legend.")
+}
 concentration_points <- concentration_points |>
   mutate(concentration_purpose = factor(
     concentration_purpose, levels = names(purpose_colours)
@@ -753,6 +795,14 @@ panel_c <- ggplot(
   guides(fill = "none") +
   bar_theme
 
+if (sum(broad_comparator_counts$studies) == 0L) {
+  panel_c <- ggplot() +
+    annotate("text", x = 1, y = 1, label = "No classified comparator roles") +
+    labs(title = "Comparator roles", tag = "c.") +
+    theme_void(base_size = 11) +
+    theme(plot.tag = element_text(face = "bold"))
+}
+
 panel_d <- ggplot(
   type_plot_data,
   aes(x = studies, y = category, fill = colour_group)
@@ -786,7 +836,14 @@ figure_4 <- wrap_plots(
   panel_c,
   panel_d,
   ncol = 2
-)
+) +
+  plot_annotation(
+    caption = paste0(
+      "Studies may contribute to multiple forms, concentrations, and comparator categories.\n",
+      "Concentration points retain their reported percentage bases and qualifications; ranges and product percentages are excluded."
+    ),
+    theme = theme(plot.caption = element_text(hjust = 0, size = 9))
+  )
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))
