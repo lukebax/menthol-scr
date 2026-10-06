@@ -647,7 +647,7 @@ purpose_colours <- c(
   NI = "#555555"
 )
 purpose_labels <- c(
-  Therapeutic = "Therapeutic intent",
+  Therapeutic = "Therapeutic",
   `Masking/control` = "Masking/nominal\nplacebo",
   Both = "Both purposes",
   NI = "Purpose unclear"

@@ -59,7 +59,7 @@ Each script also writes an `in_text_results.csv` containing named summary values
 
 Countries not separately represented in the coarse world map are listed with their study counts beneath Figure 3 and remain included in the country and regional summaries.
 
-In Figure 4, studies can contribute to multiple forms, concentrations, and comparator categories. Concentration points retain the reported percentage bases and qualifications; ranges and product percentages are excluded.
+In Figure 4, studies can contribute to multiple forms, concentrations, and comparator categories. Concentration points retain the reported percentage bases and qualifications; ranges and product percentages are excluded. The therapeutic category includes clinical investigations of effects on existing pain and does not imply intended relief.
 
 Figure 5 counts are confirmed minima of reported comparisons or descriptive case-report pain findings. Estimate and precision availability applies only to the counted comparisons. Zero-comparison studies have no coverage denominator; `N/A` denotes descriptive case reports.
 
