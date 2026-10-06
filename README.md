@@ -34,7 +34,7 @@ The dictionary defines the permitted categories. If a new study requires an addi
    install.packages(c(
      "readr", "dplyr", "tidyr", "stringr", "ggplot2", "patchwork",
      "ggrain", "sf", "countrycode", "rnaturalearth", "flextable",
-     "officer", "ragg", "scales", "ggpp"
+     "officer", "ragg", "scales", "ggpp", "gtable"
    ), repos = "https://cloud.r-project.org")
    ```
 

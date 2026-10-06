@@ -678,7 +678,7 @@ if (nrow(numeric_sample_sizes) == 0L) {
     )
 }
 
-# Equal panel widths and small outer spacers align the lower row with the map.
+# Equal plotting-area widths retain the sample-size panel's position and size.
 lower_row <- (plot_spacer() | panel_b | panel_c | panel_d | plot_spacer()) +
   plot_layout(widths = c(0.2, 1, 1, 1, 0.2))
 
@@ -696,15 +696,46 @@ if (nrow(unmapped_countries) > 0L) {
 
 dir.create(output_dir, recursive = TRUE, showWarnings = FALSE)
 write_csv(in_text_results, file.path(output_dir, "in_text_results.csv"))
-ggsave(
+ragg::agg_png(
   filename = file.path(output_dir, "figure_3_study_populations.png"),
-  plot = figure_3,
-  device = ragg::agg_png,
   width = 12,
   height = 9,
   units = "in",
-  dpi = 300,
-  bg = "white"
+  res = 300,
+  background = "white"
 )
+tryCatch({
+  # Resolve text dimensions on the output device before moving complete panels.
+  # Splitting the leading space between the two internal gaps aligns the region
+  # tag with the map tag without changing panel widths or the map and sample-size positions.
+  figure_3 <- patchworkGrob(figure_3)
+  lower_row_index <- grep("^patchwork-table-", figure_3$layout$name)
+  if (length(lower_row_index) != 1L) {
+    stop("Figure 3 must contain exactly one nested lower row.")
+  }
+  lower_row_table <- figure_3$grobs[[lower_row_index]]
+  required_layout_names <- c("tag-2", "background-2", "background-3")
+  if (any(vapply(required_layout_names, function(name) {
+    sum(lower_row_table$layout$name == name)
+  }, integer(1)) != 1L)) {
+    stop("Figure 3 must contain one region tag and one background for each moved panel.")
+  }
+  tag_b_column <- lower_row_table$layout$l[lower_row_table$layout$name == "tag-2"]
+  right_b_column <- lower_row_table$layout$r[lower_row_table$layout$name == "background-2"]
+  right_c_column <- lower_row_table$layout$r[lower_row_table$layout$name == "background-3"]
+  leading_columns <- seq.int(2L, tag_b_column - 1L)
+  leading_widths <- lower_row_table$widths[leading_columns]
+  relative_widths <- grid::unitType(leading_widths) == "null"
+  gap_widths <- grid::unit.c(
+    sum(leading_widths[!relative_widths]) / 2,
+    grid::unit(sum(as.numeric(leading_widths[relative_widths])) / 2, "null")
+  )
+  lower_row_table$widths[leading_columns] <- grid::unit(0, "mm")
+  # Keep fixed and relative space in separate columns so panel widths stay unchanged.
+  lower_row_table <- gtable::gtable_add_cols(lower_row_table, gap_widths, pos = right_c_column)
+  lower_row_table <- gtable::gtable_add_cols(lower_row_table, gap_widths, pos = right_b_column)
+  figure_3$grobs[[lower_row_index]] <- lower_row_table
+  grid::grid.draw(figure_3)
+}, finally = grDevices::dev.off())
 
 message("Section 03 outputs written to: ", output_dir)
