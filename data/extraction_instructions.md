@@ -1,6 +1,6 @@
 # Extracting study data
 
-Version: 2026-10-06
+Version: 2026-10-07
 
 Use these instructions with `data_dictionary.csv` to extract one study already included in the review. Produce one proposed row with the 25 headings in `data_extraction_form.csv` and one evidence note using the template below. Read the sources independently, check the proposed row, and integrate it into the canonical form only after review. For an existing study, keep its identifier and record any accepted corrections. For a new study, assign the next unused identifier and extract its bibliographic metadata from the article.
 
@@ -76,7 +76,7 @@ Pharmaceutical-form terminology is adapted from Barnes and colleagues (2021), Ta
 
 The last three are source-based non-vehicle categories. Do not infer a formulation solely from its product name, an assumed composition, or the site of application. If formulation evidence is insufficient, use the dictionary's `NI` rule; a genuinely new form requires review.
 
-For concentration, retain preparation-to-value-to-purpose links before aggregating. Preserve all reported qualifiers and percentage bases. `w/w`, `w/v`, `v/v`, and `v/w` mean mass per mass, mass per volume, volume per volume, and volume per mass, respectively. A conversion needs all required source inputs and a recorded formula. A peppermint or product percentage is not a menthol percentage. Do not infer typical menthol content. Retain masking concentrations descriptively even when a standalone finding is excluded.
+For concentration, retain preparation-to-value-to-purpose links before aggregating. Preserve all reported qualifiers and percentage bases. `w/w`, `w/v`, `v/v`, and `v/w` mean mass per mass, mass per volume, volume per volume, and volume per mass, respectively. A conversion needs all required source inputs and a recorded formula. A percentage of peppermint oil or another mixture does not establish a menthol concentration unless its menthol content is reported or can be calculated from source information. Do not infer typical menthol content. Retain masking concentrations descriptively even when a standalone finding is excluded.
 
 Keep five judgements distinct: menthol's purpose in the actual preparation, the whole comparator regimen's intended role, comparison eligibility, estimate availability, and precision availability. Dose magnitude, non-zero menthol, or a nominal control label cannot settle them. Another therapeutic ingredient does not confer therapeutic purpose on masking menthol. Multiple purposes may be aggregated under one concentration tag, but efficacy eligibility still requires preparation-specific evidence.
 
