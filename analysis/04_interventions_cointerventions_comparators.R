@@ -271,13 +271,16 @@ if (anyDuplicated(select(
   stop("Equivalent concentration points have conflicting purpose tags; resolve their combined purpose before plotting.")
 }
 
-# Describe therapeutic point concentrations separately from the 40% preparations.
-# A point used for both purposes still includes therapeutic use.
-therapeutic_points_excluding_40_percent <- concentration_points |>
-  filter(
-    concentration_purpose %in% c("Therapeutic", "Both"),
-    concentration_percent != 40
-  )
+# Count points and contributing studies separately. A point used for both
+# therapeutic and masking purposes contributes to each purpose summary.
+therapeutic_points <- concentration_points |>
+  filter(concentration_purpose %in% c("Therapeutic", "Both"))
+masking_points <- concentration_points |>
+  filter(concentration_purpose %in% c("Masking/control", "Both"))
+
+# Describe therapeutic concentrations separately from the 40% preparations.
+therapeutic_points_excluding_40_percent <- therapeutic_points |>
+  filter(concentration_percent != 40)
 
 # Comparator profiles keep the source-near description, reported role, and
 # controlled types together. Ingredients alone do not determine the role.
@@ -482,12 +485,17 @@ in_text_results <- tibble(
     "studies_without_usable_menthol_concentration_point",
     "studies_with_unresolved_menthol_concentration_information",
     "usable_menthol_concentration_points",
+    "therapeutic_menthol_concentration_points",
+    "masking_menthol_concentration_points",
+    "studies_with_masking_menthol_concentration_point",
     "minimum_menthol_concentration_percent",
     "maximum_menthol_concentration_percent",
     "maximum_menthol_concentration_studies",
     "maximum_menthol_concentration_study_labels",
     "minimum_therapeutic_menthol_concentration_excluding_40_percent",
     "maximum_therapeutic_menthol_concentration_excluding_40_percent",
+    "therapeutic_menthol_concentration_points_excluding_40_percent",
+    "studies_with_therapeutic_menthol_concentration_excluding_40_percent",
     "studies_with_named_co_intervention",
     "studies_with_unresolved_co_intervention_information",
     "studies_with_named_and_unresolved_co_intervention",
@@ -520,6 +528,9 @@ in_text_results <- tibble(
     nrow(studies) - length(point_study_ids),
     length(unresolved_concentration_ids),
     nrow(concentration_points),
+    nrow(therapeutic_points),
+    nrow(masking_points),
+    n_distinct(masking_points$record_id),
     if (nrow(concentration_points) > 0L) {
       min(concentration_points$concentration_percent)
     } else "NI",
@@ -537,6 +548,8 @@ in_text_results <- tibble(
     if (nrow(therapeutic_points_excluding_40_percent) > 0L) {
       max(therapeutic_points_excluding_40_percent$concentration_percent)
     } else "NI",
+    nrow(therapeutic_points_excluding_40_percent),
+    n_distinct(therapeutic_points_excluding_40_percent$record_id),
     n_distinct(named_co_interventions$record_id),
     length(unresolved_co_intervention_ids),
     length(intersect(named_co_interventions$record_id, unresolved_co_intervention_ids)),
@@ -557,7 +570,7 @@ in_text_results <- tibble(
 in_text_results$value[in_text_results$value == ""] <- "None"
 
 if (
-  nrow(in_text_results) != 29L ||
+  nrow(in_text_results) != 34L ||
     anyDuplicated(in_text_results$result) ||
     any(is.na(in_text_results$value)) ||
     any(in_text_results$value == "")
