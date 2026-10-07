@@ -344,6 +344,7 @@ in_text_results <- tibble(
     "missing_sample_size_studies",
     "missing_sample_size_study_labels",
     "minimum_sample_size",
+    "median_sample_size",
     "maximum_sample_size",
     "maximum_sample_size_study_labels"
   ),
@@ -389,6 +390,7 @@ in_text_results <- tibble(
     sum(studies$sample_size == "NI"),
     missing_sample_labels,
     if (nrow(numeric_sample_sizes) > 0L) min(numeric_sample_sizes$sample_size) else "NI",
+    if (nrow(numeric_sample_sizes) > 0L) median(numeric_sample_sizes$sample_size) else "NI",
     if (nrow(numeric_sample_sizes) > 0L) max(numeric_sample_sizes$sample_size) else "NI",
     maximum_sample_labels
   ))
@@ -398,7 +400,7 @@ in_text_results <- tibble(
 in_text_results$value[in_text_results$value == ""] <- "None"
 
 if (
-  nrow(in_text_results) != 29L ||
+  nrow(in_text_results) != 30L ||
   anyDuplicated(in_text_results$result) ||
   any(is.na(in_text_results$value)) ||
   any(in_text_results$value == "")

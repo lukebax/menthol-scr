@@ -489,6 +489,7 @@ in_text_results <- tibble(
     "masking_menthol_concentration_points",
     "studies_with_masking_menthol_concentration_point",
     "minimum_menthol_concentration_percent",
+    "median_menthol_concentration_percent",
     "maximum_menthol_concentration_percent",
     "maximum_menthol_concentration_studies",
     "maximum_menthol_concentration_study_labels",
@@ -534,6 +535,9 @@ in_text_results <- tibble(
     if (nrow(concentration_points) > 0L) {
       min(concentration_points$concentration_percent)
     } else "NI",
+    if (nrow(concentration_points) > 0L) {
+      median(concentration_points$concentration_percent)
+    } else "NI",
     if (nrow(concentration_points) > 0L) maximum_concentration else "NI",
     n_distinct(
       concentration_points$record_id[
@@ -570,7 +574,7 @@ in_text_results <- tibble(
 in_text_results$value[in_text_results$value == ""] <- "None"
 
 if (
-  nrow(in_text_results) != 34L ||
+  nrow(in_text_results) != 35L ||
     anyDuplicated(in_text_results$result) ||
     any(is.na(in_text_results$value)) ||
     any(in_text_results$value == "")
