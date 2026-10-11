@@ -96,9 +96,15 @@ format_comparator_for_table <- function(x) {
   )
 }
 
+# Add the record ID only when author and year alone would be ambiguous.
+study_labels <- paste0(studies$first_author, " (", studies$publication_year, ")")
+duplicate_labels <- duplicated(study_labels) | duplicated(study_labels, fromLast = TRUE)
+study_labels[duplicate_labels] <- paste0(
+  study_labels[duplicate_labels], " [", studies$record_id[duplicate_labels], "]"
+)
 table_1 <- studies |>
   mutate(
-    study = paste0(first_author, " (", publication_year, ")"),
+    study = study_labels,
     design_order = match(study_design, design_order)
   ) |>
   arrange(
