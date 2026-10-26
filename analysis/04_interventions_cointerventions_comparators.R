@@ -891,5 +891,19 @@ ggsave(
   dpi = 300,
   bg = "white"
 )
+# Export scalable text and lines with embedded fonts for publication.
+ggsave(
+  filename = file.path(
+    output_dir,
+    "figure_4_interventions_cointerventions_comparators.pdf"
+  ),
+  plot = figure_4,
+  device = grDevices::cairo_pdf,
+  width = 12,
+  height = 10,
+  units = "in",
+  fallback_resolution = 600,
+  bg = "white"
+)
 
 message("Section 04 outputs written to: ", output_dir)

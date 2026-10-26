@@ -433,5 +433,16 @@ ggsave(
   dpi = 300,
   bg = "white"
 )
+# Export scalable text and lines with embedded fonts for publication.
+ggsave(
+  filename = file.path(output_dir, "figure_2_study_designs.pdf"),
+  plot = figure_2,
+  device = grDevices::cairo_pdf,
+  width = 12,
+  height = 10,
+  units = "in",
+  fallback_resolution = 600,
+  bg = "white"
+)
 
 message("Section 02 outputs written to: ", output_dir)

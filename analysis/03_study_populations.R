@@ -740,4 +740,16 @@ tryCatch({
   grid::grid.draw(figure_3)
 }, finally = grDevices::dev.off())
 
+# Reuse the aligned figure for a scalable PDF with embedded fonts.
+ggsave(
+  filename = file.path(output_dir, "figure_3_study_populations.pdf"),
+  plot = figure_3,
+  device = grDevices::cairo_pdf,
+  width = 12,
+  height = 9,
+  units = "in",
+  fallback_resolution = 600,
+  bg = "white"
+)
+
 message("Section 03 outputs written to: ", output_dir)

@@ -366,3 +366,9 @@ ggsave(
   device = ragg::agg_png, width = 10, height = 4.2, units = "in", dpi = 300,
   bg = "white"
 )
+# Export scalable text and lines with embedded fonts for publication.
+ggsave(
+  file.path(output_dir, "figure_5_topical_menthol_analgesic_efficacy.pdf"), figure_5,
+  device = grDevices::cairo_pdf, width = 10, height = 4.2, units = "in",
+  fallback_resolution = 600, bg = "white"
+)

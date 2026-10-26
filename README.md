@@ -40,7 +40,7 @@ The dictionary defines the permitted categories. If a new study requires an addi
 
 4. Open each script in `analysis/`, in order from `01` to `06`, and click **Source** to run the whole script. Each script reads the data directly and can also run independently.
 
-Tested with R 4.6.1 and RStudio 2026.09.0+174 on macOS. R and the listed packages must be installed; no other project folders, source PDFs, or external data files are needed. Tables use Arial, so appearance may vary if that font is unavailable.
+Tested with R 4.6.1 and RStudio 2026.09.0+174 on macOS. R and the listed packages must be installed; PDF export also requires an R build with Cairo support. No other project folders, source PDFs, or external data files are needed. Tables use Arial, so appearance may vary if that font is unavailable.
 
 ## Outputs
 
@@ -55,7 +55,9 @@ The scripts create `outputs/` automatically, with one subfolder per subsection:
 | 05 | Figure 5: efficacy-result counts, numerical reporting, and registration |
 | 06 | Table 2: adverse-event reporting, as CSV and Word files |
 
-Each script also writes an `in_text_results.csv` containing named summary values. Together, the scripts produce four PNG figures, two CSV/Word table pairs, and six summary CSVs: 14 files. Re-running a script replaces its generated files.
+Each script also writes an `in_text_results.csv` containing named summary values. Together, the scripts produce four PNG figures, four PDF figures, two CSV/Word table pairs, and six summary CSVs: 18 files. Re-running a script replaces its generated files.
+
+The PDFs use Cairo to provide scalable vector text and lines with embedded fonts. They are saved alongside the PNGs in the same output folders and at the same physical figure sizes. Any bitmap fallback uses 600 dpi.
 
 Countries not separately represented in the coarse world map are listed with their study counts beneath Figure 3 and remain included in the country and regional summaries.
 
